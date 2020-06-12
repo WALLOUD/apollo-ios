@@ -37,7 +37,7 @@ class ParseQueryResponseTests: XCTestCase {
     }
   }
 
-  func testHeroNameQueryWithWrongType() {
+  func testHeroNameQueryWithDifferentType() throws {
     let query = HeroNameQuery()
     
     let response = GraphQLResponse(operation: query, body: [
@@ -46,10 +46,24 @@ class ParseQueryResponseTests: XCTestCase {
       ]
     ])
 
+    let (result, _) = try response.parseResult().await()
+    
+    XCTAssertEqual(result.data?.hero?.name, "10")
+  }
+
+  func testHeroNameQueryWithWrongType() throws {
+    let query = HeroNameQuery()
+
+    let response = GraphQLResponse(operation: query, body: [
+      "data": [
+        "hero": ["__typename": "Droid", "name": 10.0]
+      ]
+    ])
+
     XCTAssertThrowsError(try response.parseResult().await()) { error in
       if let error = error as? GraphQLResultError, case JSONDecodingError.couldNotConvert(let value, let expectedType) = error.underlying {
         XCTAssertEqual(error.path, ["hero", "name"])
-        XCTAssertEqual(value as? Int, 10)
+        XCTAssertEqual(value as? Double, 10.0)
         XCTAssertTrue(expectedType == String.self)
       } else {
         XCTFail("Unexpected error: \(error)")
@@ -105,7 +119,7 @@ class ParseQueryResponseTests: XCTestCase {
     let (result, _) = try response.parseResult().await()
 
     XCTAssertEqual(result.data?.hero?.name, "R2-D2")
-    let friendsNames = result.data?.hero?.friends?.flatMap { $0?.name }
+    let friendsNames = result.data?.hero?.friends?.compactMap { $0?.name }
     XCTAssertEqual(friendsNames, ["Luke Skywalker", "Han Solo", "Leia Organa"])
   }
   
@@ -148,7 +162,7 @@ class ParseQueryResponseTests: XCTestCase {
     let (result, _) = try response.parseResult().await()
     
     XCTAssertEqual(result.data?.hero?.name, "R2-D2")
-    let friendsNames = result.data?.hero?.fragments.friendsNames.friends?.flatMap { $0?.name }
+    let friendsNames = result.data?.hero?.fragments.friendsNames.friends?.compactMap { $0?.name }
     XCTAssertEqual(friendsNames, ["Luke Skywalker", "Han Solo", "Leia Organa"])
   }
 
@@ -179,10 +193,8 @@ class ParseQueryResponseTests: XCTestCase {
     
     let (result, _) = try response.parseResult().await()
     
-    guard let droid = result.data?.hero?.asDroid else {
-      XCTFail("Wrong type")
-      return
-    }
+    let droid = try XCTUnwrap(result.data?.hero?.asDroid,
+                              "Wrong type")
     
     XCTAssertEqual(droid.primaryFunction, "Astromech")
   }
@@ -198,10 +210,8 @@ class ParseQueryResponseTests: XCTestCase {
 
     let (result, _) = try response.parseResult().await()
 
-    guard let human = result.data?.hero?.asHuman else {
-      XCTFail("Wrong type")
-      return
-    }
+    let human = try XCTUnwrap(result.data?.hero?.asHuman,
+                              "Wrong type")
     
     XCTAssertEqual(human.height, 1.72)
   }
@@ -250,10 +260,8 @@ class ParseQueryResponseTests: XCTestCase {
     
     let (result, _) = try response.parseResult().await()
     
-    guard let droid = result.data?.hero?.fragments.heroDetails.asDroid else {
-      XCTFail("Wrong type")
-      return
-    }
+    let droid = try XCTUnwrap(result.data?.hero?.fragments.heroDetails.asDroid,
+                              "Wrong type")
     
     XCTAssertEqual(droid.primaryFunction, "Astromech")
   }
@@ -269,10 +277,8 @@ class ParseQueryResponseTests: XCTestCase {
 
     let (result, _) = try response.parseResult().await()
 
-    guard let human = result.data?.hero?.fragments.heroDetails.asHuman else {
-      XCTFail("Wrong type")
-      return
-    }
+    let human = try XCTUnwrap(result.data?.hero?.fragments.heroDetails.asHuman,
+                              "Wrong type")
     
     XCTAssertEqual(human.height, 1.72)
   }

@@ -3,9 +3,71 @@ import XCTest
 import ApolloTestSupport
 import StarWarsAPI
 
-class StarWarsServerTests: XCTestCase {
-  // MARK: Queries
 
+protocol TestConfig {
+  func network() -> HTTPNetworkTransport
+}
+
+class DefaultConfig: TestConfig {
+  let transport =  HTTPNetworkTransport(url: URL(string: "http://localhost:8080/graphql")!)
+  func network() -> HTTPNetworkTransport {
+    return transport
+  }
+}
+
+class APQsConfig: TestConfig {
+  let transport = HTTPNetworkTransport(url: URL(string: "http://localhost:8080/graphql")!,
+                                       enableAutoPersistedQueries: true)
+  func network() -> HTTPNetworkTransport {
+    return transport
+  }
+}
+
+class APQsWithGetMethodConfig: TestConfig, HTTPNetworkTransportRetryDelegate{
+  
+  var alreadyRetried = false
+  func networkTransport(_ networkTransport: HTTPNetworkTransport, receivedError error: Error, for request: URLRequest, response: URLResponse?, continueHandler: @escaping (HTTPNetworkTransport.ContinueAction) -> Void) {
+    continueHandler(!alreadyRetried ? .retry : .fail(error))
+    alreadyRetried = true
+  }
+  
+  func network() -> HTTPNetworkTransport {
+    let transport = HTTPNetworkTransport(url: URL(string: "http://localhost:8080/graphql")!,
+                                enableAutoPersistedQueries: true,
+                                useGETForPersistedQueryRetry: true)
+    transport.delegate = self
+    return transport
+  }
+  
+}
+
+class StarWarsServerAPQsGetMethodTests: StarWarsServerTests {
+  override func setUp() {
+    super.setUp()
+    config = APQsWithGetMethodConfig()
+  }
+}
+
+class StarWarsServerAPQsTests: StarWarsServerTests {
+  override func setUp() {
+    super.setUp()
+    config = APQsConfig()
+  }
+}
+
+class StarWarsServerTests: XCTestCase, CacheTesting {
+  // MARK: Queries
+  var config: TestConfig!
+
+  var cacheType: TestCacheProvider.Type {
+    InMemoryTestCacheProvider.self
+  }
+  
+  override func setUp() {
+    super.setUp()
+    config = DefaultConfig()
+  }
+  
   func testHeroNameQuery() {
     fetch(query: HeroNameQuery()) { data in
       XCTAssertEqual(data.hero?.name, "R2-D2")
@@ -27,14 +89,14 @@ class StarWarsServerTests: XCTestCase {
   func testHeroAndFriendsNamesQuery() {
     fetch(query: HeroAndFriendsNamesQuery()) { data in
       XCTAssertEqual(data.hero?.name, "R2-D2")
-      let friendsNames = data.hero?.friends?.flatMap { $0?.name }
+      let friendsNames = data.hero?.friends?.compactMap { $0?.name }
       XCTAssertEqual(friendsNames, ["Luke Skywalker", "Han Solo", "Leia Organa"])
     }
   }
   
   func testHeroFriendsOfFriendsNamesQuery() {
     fetch(query: HeroFriendsOfFriendsNamesQuery()) { data in
-      let friendsOfFirstFriendNames = data.hero?.friends?.first??.friends?.flatMap { $0?.name }
+      let friendsOfFirstFriendNames = data.hero?.friends?.first??.friends?.compactMap { $0?.name }
       XCTAssertEqual(friendsOfFirstFriendNames, ["Han Solo", "Leia Organa", "C-3PO", "R2-D2"])
     }
   }
@@ -263,28 +325,34 @@ class StarWarsServerTests: XCTestCase {
   }
 
   // MARK: - Helpers
-
+  
   private func fetch<Query: GraphQLQuery>(query: Query, completionHandler: @escaping (_ data: Query.Data) -> Void) {
     withCache { (cache) in
-      let network = HTTPNetworkTransport(url: URL(string: "http://localhost:8080/graphql")!)
+      
       let store = ApolloStore(cache: cache)
-      let client = ApolloClient(networkTransport: network, store: store)
+      let client = ApolloClient(networkTransport: config.network(), store: store)
 
       let expectation = self.expectation(description: "Fetching query")
 
-      client.fetch(query: query) { (result, error) in
+      client.fetch(query: query) { result in
         defer { expectation.fulfill() }
-
-        if let error = error { XCTFail("Error while fetching query: \(error.localizedDescription)");  return }
-        guard let result = result else { XCTFail("No query result");  return }
-
-        if let errors = result.errors {
-          XCTFail("Errors in query result: \(errors)")
+      
+        switch result {
+        case .success(let graphQLResult):
+          XCTAssertNil(graphQLResult.errors)
+          guard let data = graphQLResult.data else {
+            XCTFail("No query result data")
+            return
+          }
+          
+          completionHandler(data)
+        case .failure(let error):
+          if let responseError = error as? GraphQLHTTPResponseError {
+            XCTFail("Response error: \(responseError.bodyDescription)")
+          } else {
+            XCTFail("Unexpected error: \(error)")
+          }
         }
-
-        guard let data = result.data else { XCTFail("No query result data");  return }
-
-        completionHandler(data)
       }
       
       waitForExpectations(timeout: 5, handler: nil)
@@ -293,25 +361,28 @@ class StarWarsServerTests: XCTestCase {
 
   private func perform<Mutation: GraphQLMutation>(mutation: Mutation, completionHandler: @escaping (_ data: Mutation.Data) -> Void) {
     withCache { (cache) in
-      let network = HTTPNetworkTransport(url: URL(string: "http://localhost:8080/graphql")!)
+      
       let store = ApolloStore(cache: cache)
-      let client = ApolloClient(networkTransport: network, store: store)
+      let client = ApolloClient(networkTransport: config.network(), store: store)
 
       let expectation = self.expectation(description: "Performing mutation")
 
-      client.perform(mutation: mutation) { (result, error) in
+      client.perform(mutation: mutation) { result in
         defer { expectation.fulfill() }
-
-        if let error = error { XCTFail("Error while performing mutation: \(error.localizedDescription)");  return }
-        guard let result = result else { XCTFail("No mutation result");  return }
-
-        if let errors = result.errors {
-          XCTFail("Errors in mutation result: \(errors)")
+        
+        switch result {
+        case .success(let graphQLResult):
+          XCTAssertNil(graphQLResult.errors)
+          
+          guard let data = graphQLResult.data else {
+            XCTFail("No mutation result data")
+            return
+          }
+          
+          completionHandler(data)
+        case .failure(let error):
+          XCTFail("Unexpected error: \(error)")
         }
-
-        guard let data = result.data else { XCTFail("No mutation result data");  return }
-
-        completionHandler(data)
       }
       
       waitForExpectations(timeout: 5, handler: nil)

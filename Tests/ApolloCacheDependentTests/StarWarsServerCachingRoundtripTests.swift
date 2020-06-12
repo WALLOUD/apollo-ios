@@ -3,13 +3,17 @@ import XCTest
 import ApolloTestSupport
 import StarWarsAPI
 
-class StarWarsServerCachingRoundtripTests: XCTestCase {
+class StarWarsServerCachingRoundtripTests: XCTestCase, CacheTesting {
+  var cacheType: TestCacheProvider.Type {
+    InMemoryTestCacheProvider.self
+  }
+  
   func testHeroAndFriendsNamesQuery() {
     let query = HeroAndFriendsNamesQuery()
     
     fetchAndLoadFromStore(query: query) { data in
       XCTAssertEqual(data.hero?.name, "R2-D2")
-      let friendsNames = data.hero?.friends?.flatMap { $0?.name }
+      let friendsNames = data.hero?.friends?.compactMap { $0?.name }
       XCTAssertEqual(friendsNames, ["Luke Skywalker", "Han Solo", "Leia Organa"])
     }
   }
@@ -19,7 +23,7 @@ class StarWarsServerCachingRoundtripTests: XCTestCase {
     
     fetchAndLoadFromStore(query: query) { data in
       XCTAssertEqual(data.hero?.name, "R2-D2")
-      let friendsNames = data.hero?.friends?.flatMap { $0?.name }
+      let friendsNames = data.hero?.friends?.compactMap { $0?.name }
       XCTAssertEqual(friendsNames, ["Luke Skywalker", "Han Solo", "Leia Organa"])
     }
   }
@@ -29,7 +33,7 @@ class StarWarsServerCachingRoundtripTests: XCTestCase {
     
     fetchAndLoadFromStore(query: query, setupClient: { $0.store.cacheKeyForObject = {$0["id"]} }) { data in
       XCTAssertEqual(data.hero?.name, "R2-D2")
-      let friendsNames = data.hero?.friends?.flatMap { $0?.name }
+      let friendsNames = data.hero?.friends?.compactMap { $0?.name }
       XCTAssertEqual(friendsNames, ["Luke Skywalker", "Han Solo", "Leia Organa"])
     }
   }
@@ -46,24 +50,36 @@ class StarWarsServerCachingRoundtripTests: XCTestCase {
 
       let expectation = self.expectation(description: "Fetching query")
 
-      client.fetch(query: query) { (result, error) in
-        if let error = error { XCTFail("Error while fetching query: \(error.localizedDescription)");  return }
-        guard let result = result else { XCTFail("No query result");  return }
-
-        if let errors = result.errors {
-          XCTFail("Errors in query result: \(errors)")
-        }
-
-        guard result.data != nil else { XCTFail("No query result data");  return }
-
-        client.store.load(query: query) { (result, error) in
-          defer { expectation.fulfill() }
-
-          if let error = error { XCTFail("Error while loading query from store: \(error.localizedDescription)");  return }
-
-          guard let data = result?.data else { XCTFail("No query result data");  return }
-
-          completionHandler(data)
+      client.fetch(query: query) { outerResult in
+        switch outerResult {
+        case .failure(let error):
+          XCTFail("Unexpected error with fetch: \(error)")
+          expectation.fulfill()
+          return
+        case .success(let fetchGraphQLResult):
+          XCTAssertNil(fetchGraphQLResult.errors)
+          
+          guard fetchGraphQLResult.data != nil else {
+            XCTFail("No query result data from fetching!")
+            expectation.fulfill()
+            return
+          }
+          
+          client.store.load(query: query) { innerResult in
+            defer { expectation.fulfill() }
+            
+            switch innerResult {
+            case .success(let loadGraphQLResult):
+              guard let data = loadGraphQLResult.data else {
+                XCTFail("No query result data from loading!")
+                return
+              }
+              
+              completionHandler(data)
+            case .failure(let error):
+              XCTFail("Error while loading query from store: \(error.localizedDescription)")
+            }
+          }
         }
       }
 

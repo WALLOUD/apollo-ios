@@ -2,10 +2,14 @@ import Foundation
 
 extension String: JSONDecodable, JSONEncodable {
   public init(jsonValue value: JSONValue) throws {
-    guard let string = value as? String else {
-      throw JSONDecodingError.couldNotConvert(value: value, to: String.self)
+    switch value {
+    case let string as String:
+        self = string
+    case let int as Int:
+        self = String(int)
+    default:
+        throw JSONDecodingError.couldNotConvert(value: value, to: String.self)
     }
-    self = string
   }
 
   public var jsonValue: JSONValue {
@@ -111,7 +115,7 @@ extension Dictionary: JSONEncodable {
   public var jsonValue: JSONValue {
     return jsonObject
   }
-  
+
   public var jsonObject: JSONObject {
     var jsonObject = JSONObject(minimumCapacity: count)
     for (key, value) in self {
@@ -144,7 +148,12 @@ extension URL: JSONDecodable, JSONEncodable {
     guard let string = value as? String else {
       throw JSONDecodingError.couldNotConvert(value: value, to: URL.self)
     }
-    self.init(string: string)!
+
+    if let url = URL(string: string) {
+        self = url
+    } else {
+        throw JSONDecodingError.couldNotConvert(value: value, to: URL.self)
+    }
   }
 
   public var jsonValue: JSONValue {

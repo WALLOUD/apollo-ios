@@ -1,21 +1,29 @@
+public enum GraphQLOperationType {
+  case query
+  case mutation
+  case subscription
+}
+
 public protocol GraphQLOperation: class {
-  static var rootCacheKey: String { get }
-  
-  static var operationString: String { get }
-  static var requestString: String { get }
-  static var operationIdentifier: String? { get }
-  
+  var operationType: GraphQLOperationType { get }
+
+  var operationDefinition: String { get }
+  var operationIdentifier: String? { get }
+  var operationName: String { get }
+
+  var queryDocument: String { get }
+
   var variables: GraphQLMap? { get }
-  
+
   associatedtype Data: GraphQLSelectionSet
 }
 
 public extension GraphQLOperation {
-  static var requestString: String {
-    return operationString
+  var queryDocument: String {
+    return operationDefinition
   }
 
-  static var operationIdentifier: String? {
+  var operationIdentifier: String? {
     return nil
   }
 
@@ -26,14 +34,20 @@ public extension GraphQLOperation {
 
 public protocol GraphQLQuery: GraphQLOperation {}
 public extension GraphQLQuery {
-  static var rootCacheKey: String { return "QUERY_ROOT" }
+  var operationType: GraphQLOperationType { return .query }
 }
 
 public protocol GraphQLMutation: GraphQLOperation {}
 public extension GraphQLMutation {
-  static var rootCacheKey: String { return "MUTATION_ROOT" }
+  var operationType: GraphQLOperationType { return .mutation }
+}
+
+public protocol GraphQLSubscription: GraphQLOperation {}
+public extension GraphQLSubscription {
+  var operationType: GraphQLOperationType { return .subscription }
 }
 
 public protocol GraphQLFragment: GraphQLSelectionSet {
+  static var fragmentDefinition: String { get }
   static var possibleTypes: [String] { get }
 }

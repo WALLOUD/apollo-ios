@@ -4,24 +4,24 @@ final class GraphQLSelectionSetMapper<SelectionSet: GraphQLSelectionSet>: GraphQ
     // This will convert a JSON value to the expected value type, which could be a custom scalar or an enum.
     return try decodable.init(jsonValue: scalar)
   }
-  
+
   func acceptNullValue(info: GraphQLResolveInfo) -> Any? {
     return nil
   }
-  
+
   func accept(list: [Any?], info: GraphQLResolveInfo) -> Any? {
     return list
   }
-  
+
   func accept(fieldEntry: Any?, info: GraphQLResolveInfo) -> (key: String, value: Any?) {
     return (info.responseKeyForField, fieldEntry)
   }
-  
-  func accept(fieldEntries: [(key: String, value: Any?)], info: GraphQLResolveInfo) throws -> Snapshot {
-    return Snapshot(fieldEntries)
+
+  func accept(fieldEntries: [(key: String, value: Any?)], info: GraphQLResolveInfo) throws -> ResultMap {
+    return ResultMap(fieldEntries)
   }
-  
-  func finish(rootValue: Snapshot, info: GraphQLResolveInfo) -> SelectionSet {
-    return SelectionSet.init(snapshot: rootValue)
+
+  func finish(rootValue: ResultMap, info: GraphQLResolveInfo) -> SelectionSet {
+    return SelectionSet.init(unsafeResultMap: rootValue)
   }
 }

@@ -1,25 +1,29 @@
 /// A set of cache records.
 public struct RecordSet {
   public private(set) var storage: [CacheKey: Record] = [:]
-  
+
   public init<S: Sequence>(records: S) where S.Iterator.Element == Record {
     insert(contentsOf: records)
   }
-  
+
   public mutating func insert(_ record: Record) {
     storage[record.key] = record
   }
-  
+
+  public mutating func clear() {
+    storage.removeAll()
+  }
+
   public mutating func insert<S: Sequence>(contentsOf records: S) where S.Iterator.Element == Record {
     for record in records {
       insert(record)
     }
   }
-  
+
   public subscript(key: CacheKey) -> Record? {
     return storage[key]
   }
-  
+
   public var isEmpty: Bool {
     return storage.isEmpty
   }
@@ -27,21 +31,21 @@ public struct RecordSet {
   public var keys: [CacheKey] {
     return Array(storage.keys)
   }
-  
+
   @discardableResult public mutating func merge(records: RecordSet) -> Set<CacheKey> {
     var changedKeys: Set<CacheKey> = Set()
-    
+
     for (_, record) in records.storage {
       changedKeys.formUnion(merge(record: record))
     }
-    
+
     return changedKeys
   }
-  
+
   @discardableResult public mutating func merge(record: Record) -> Set<CacheKey> {
     if var oldRecord = storage.removeValue(forKey: record.key) {
       var changedKeys: Set<CacheKey> = Set()
-      
+
       for (key, value) in record.fields {
         if let oldValue = oldRecord.fields[key], equals(oldValue, value) {
           continue
@@ -70,8 +74,8 @@ extension RecordSet: CustomStringConvertible {
   }
 }
 
-extension RecordSet: CustomPlaygroundQuickLookable {
-  public var customPlaygroundQuickLook: PlaygroundQuickLook {
-    return .text(description)
-  }
+extension RecordSet: CustomPlaygroundDisplayConvertible {
+	public var playgroundDescription: Any {
+		 return description
+	}
 }
